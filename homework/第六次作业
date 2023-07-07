@@ -1,0 +1,170 @@
+void Bigword(const std_msgs::String::ConstPtr &msg)  //回调函数，把得到的值引用到msg
+{  
+    int a=1;
+    std::string Data = msg->data.c_str();  //需要定义一个字符串变量来接收，使用指针传输
+
+    transform(Data.begin(),Data.end(),Data.begin(),::toupper); //转换大小写
+    std_msgs::String answer ; //定义一个消息类型用来交互信息
+    answer.data = Data; //把计算的值传给消息类型旗下的data
+    
+    pub.publish(answer);
+         
+    ROS_INFO("转换的大写为: %s", Data.c_str());
+}
+int main(int argc,char *argv[])
+{
+    setlocale(LC_ALL,"");
+    ros::init(argc,argv,"string_converter");
+    ros::NodeHandle h;
+    ros::Subscriber sub = h.subscribe("input_topic",10,Bigword);
+  <launch>
+      <node pkg = "turtlesim" type = "turtlesim_node" name = "turtle1" output = "screen" />
+      <node pkg = "turtlesim" type = "turtle_teleop_key" name = "key1" output = "screen" />
+
+      <node pkg = "homework06_tf" type = "turtle2_get" name = "turtle2" output = "screen" />
+
+      <node pkg = "homework06_tf" type = "pub_pose" name = "pub1" args = "turtle1" output = "screen" />
+      <node pkg = "homework06_tf" type = "pub_pose" name = "pub2" args = "turtle2" output = "screen" />
+
+      <node pkg = "homework06_tf" type = "follow" name = "follow" output = "screen" />
+
+</launch>
+ 43 changes: 43 additions & 0 deletions43  
+homework/1.话题通信/code/homework01/include/homework01/homework/06-homework/src/follow.cpp
+Comment on this file
+@@ -0,0 +1,43 @@
+#include "ros/ros.h"
+#include "tf2_ros/transform_listener.h"
+#include "tf2_ros/buffer.h"
+#include "geometry_msgs/Twist.h"
+#include "geometry_msgs/PointStamped.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
+#include "geometry_msgs/TransformStamped.h"
+
+int main(int argc, char *argv[])
+{
+    setlocale(LC_ALL,"");
+    ros::init(argc, argv, "follow_sub");
+    ros::NodeHandle nh;
+
+    tf2_ros::Buffer buffer;
+    tf2_ros::TransformListener zwt(buffer);
+
+    ros::Publisher twist = nh.advertise<geometry_msgs::Twist>("/turtle2/cmd_vel",100);
+
+    ros::Rate r(10);
+    while(ros::ok())
+    {
+        try
+        {
+            geometry_msgs::TransformStamped son1toson2;
+            son1toson2 = buffer.lookupTransform("turtle2","turtle1",ros::Time(0));
+
+            geometry_msgs::Twist tmsg;
+            tmsg.linear.x = 0.5 * sqrt(pow(son1toson2.transform.translation.x , 2) + pow(son1toson2.transform.translation.y , 2));
+            tmsg.angular.z = 4 * atan2(son1toson2.transform.translation.y , son1toson2.transform.translation.x);
+
+            twist.publish(tmsg);
+        }
+        catch(const std::exception& e)
+        {
+            ROS_INFO("错误提示：%s",e.what());
+        }
+        r.sleep();
+        ros::spinOnce();        
+    }
+
+    return 0;
+}
+ 52 changes: 52 additions & 0 deletions52  
+homework/1.话题通信/code/homework01/include/homework01/homework/06-homework/src/pub_pose.cpp
+Comment on this file
+@@ -0,0 +1,52 @@
+#include "ros/ros.h"
+#include "turtlesim/Pose.h"
+#include "tf2_ros/transform_broadcaster.h"
+#include "geometry_msgs/TransformStamped.h"
+#include "tf2/LinearMath/Quaternion.h"
+
+std::string turtle_name; //全局变量，两个函数都要用
+
+void poseget (const turtlesim::Pose::ConstPtr& posemsg)
+{
+    static tf2_ros::TransformBroadcaster zwt;
+
+    geometry_msgs::TransformStamped posemsg2;
+
+    posemsg2.header.stamp = ros::Time::now();
+    posemsg2.header.frame_id = "zwt_world";
+    posemsg2.child_frame_id = turtle_name;
+
+    posemsg2.transform.translation.x = posemsg->x;
+    posemsg2.transform.translation.y = posemsg->y;
+    posemsg2.transform.translation.z = 0;
+
+    tf2::Quaternion four1;
+    four1.setRPY(0,0,posemsg->theta);
+
+    posemsg2.transform.rotation.x = four1.getX();
+    posemsg2.transform.rotation.y = four1.getY();
+    posemsg2.transform.rotation.z = four1.getZ();
+    posemsg2.transform.rotation.w = four1.getW();
+
+    zwt.sendTransform(posemsg2);
+}
+
+int main(int argc, char *argv[])
+{
+    setlocale(LC_ALL, "");
+    ros::init(argc, argv, "pub_pose");
+    ros::NodeHandle nh;
+
+    if(argc != 2)
+    {
+        ROS_ERROR("Usage: add a param!");
+        return 1;
+    }else{
+        turtle_name = argv[1];
+    } 
+
+    ros::Subscriber jdfx = nh.subscribe(turtle_name + "/pose",100,poseget);
+    ros::spin();
+
+    return 0;
+}
+ 32 changes: 32 additions & 0 deletions32  
+homework/1.话题通信/code/homework01/include/homework01/homework/06-homework/src/turtle2_get.cpp
+Comment on this file
+@@ -0,0 +1,32 @@
+#include "ros/ros.h"
+#include "turtlesim/Spawn.h"
+
+int main(int argc, char *argv[])
+{
+    setlocale(LC_ALL,"");
+    ros::init(argc,argv,"get_turtle");
+    ros::NodeHandle co;
+
+    ros::ServiceClient t = co.serviceClient<turtlesim::Spawn>("/spawn");
+
+    ros::service::waitForService("/spawn");
+
+    turtlesim::Spawn spawn_msg;
+
+    spawn_msg.request.x = 2.0;
+    spawn_msg.request.y = 2.0;
+    spawn_msg.request.theta = 1.57;
+    spawn_msg.request.name = "turtle2";
+
+    bool judge = t.call(spawn_msg);
+
+    if(judge)
+    {
+        ROS_INFO("新的乌龟生成，名字: %s",spawn_msg.response.name);
+    }else{
+        ROS_INFO("乌龟生成失败！！！");
+
+    } 
+
+    return 0;
+}
